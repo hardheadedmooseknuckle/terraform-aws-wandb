@@ -58,6 +58,38 @@ resource "aws_s3_bucket_public_access_block" "file_storage" {
   ignore_public_acls      = true
 }
 
+# Enables bucket logging
+resource "aws_s3_bucket" "log_bucket" {
+  bucket = "${var.namespace}-log-bucket-${random_pet.file_storage.id}"
+}
+
+resource "aws_s3_bucket_acl" "log_bucket_acl" {
+  bucket = aws_s3_bucket.log_bucket.id
+  acl    = "log-delivery-write"
+}
+
+resource "aws_s3_bucket_logging" "bucket_logging" {
+  bucket = aws_s3_bucket.file_storage.id
+
+  target_bucket = aws_s3_bucket.log_bucket.id
+  target_prefix = "${var.namespace}-logs/"
+}
+
+# Enables intelligent tiering storage class
+resource "aws_s3_bucket_intelligent_tiering_configuration" "intelligent_tiering_configuration" {
+  bucket = aws_s3_bucket.log_bucket.bucket
+  name   = "${var.namespace}-intelligent-tiering"
+
+  tiering {
+    access_tier = "DEEP_ARCHIVE_ACCESS"
+    days        = 180
+  }
+  tiering {
+    access_tier = "ARCHIVE_ACCESS"
+    days        = 125
+  }
+}
+
 # Give the bucket permission to send messages onto the queue. Looks like we
 # overide this value.
 resource "aws_sqs_queue_policy" "file_storage" {
