@@ -5,13 +5,13 @@ variable "namespace" {
 
 variable "domain" {
   type        = string
-  default     = "wandb"
-  description = "Subdomain for accessing the Weights & Biases UI."
+  default     = "wandb.ml"
+  description = "domain for accessing the Weights & Biases UI."
 }
 
 variable "subdomain" {
   type        = string
-  default     = "wandb"
+  default     = "venky-aws"
   description = "Subdomain for accessing the Weights & Biases UI."
 }
 
