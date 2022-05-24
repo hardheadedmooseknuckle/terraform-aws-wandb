@@ -24,7 +24,7 @@ variable "wandb_license" {
 }
 
 variable "database_engine_version" {
-  description = "Version for MySQL Auora"
+  description = "Version for MySQL Aurora"
   type        = string
   default     = "5.7"
 
