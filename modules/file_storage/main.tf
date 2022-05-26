@@ -59,26 +59,26 @@ resource "aws_s3_bucket_public_access_block" "file_storage" {
 }
 
 # Enables bucket logging
-resource "aws_s3_bucket" "log_bucket" {
-  bucket = "${var.namespace}-log-bucket-${random_pet.file_storage.id}"
+resource "aws_s3_bucket" "log_storage" {
+  bucket = "${var.namespace}-log-storage-${random_pet.file_storage.id}"
 }
 
-resource "aws_s3_bucket_acl" "log_bucket_acl" {
-  bucket = aws_s3_bucket.log_bucket.id
+resource "aws_s3_bucket_acl" "log_storage_acl" {
+  bucket = aws_s3_bucket.log_storage.id
   acl    = "log-delivery-write"
 }
 
-resource "aws_s3_bucket_logging" "bucket_logging" {
+resource "aws_s3_bucket_logging" "file_storage" {
   bucket = aws_s3_bucket.file_storage.id
 
-  target_bucket = aws_s3_bucket.log_bucket.id
+  target_bucket = aws_s3_bucket.log_storage.id
   target_prefix = "${var.namespace}-logs/"
 }
 
 # Enables intelligent tiering storage class
-resource "aws_s3_bucket_intelligent_tiering_configuration" "intelligent_tiering_configuration" {
-  bucket = aws_s3_bucket.log_bucket.bucket
-  name   = "${var.namespace}-intelligent-tiering"
+resource "aws_s3_bucket_intelligent_tiering_configuration" "configuration" {
+  bucket = aws_s3_bucket.log_storage.bucket
+  name   = "${var.namespace}-logs"
 
   tiering {
     access_tier = "DEEP_ARCHIVE_ACCESS"
