@@ -37,6 +37,8 @@ module "wandb_infra" {
   bucket_name        = var.bucket_name
   bucket_kms_key_arn = var.bucket_kms_key_arn
   use_internal_queue = true
+
+  log_bucket_name = var.log_bucket_name
 }
 
 data "aws_eks_cluster" "app_cluster" {

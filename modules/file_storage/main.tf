@@ -39,7 +39,7 @@ resource "aws_s3_bucket_cors_configuration" "cors_configuration" {
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "server_side_encryption_configuration" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "configuration" {
   bucket = aws_s3_bucket.file_storage.bucket
 
   rule {
@@ -56,38 +56,6 @@ resource "aws_s3_bucket_public_access_block" "file_storage" {
   block_public_policy     = true
   restrict_public_buckets = true
   ignore_public_acls      = true
-}
-
-# Enables bucket logging
-resource "aws_s3_bucket" "log_storage" {
-  bucket = "${var.namespace}-log-storage-${random_pet.file_storage.id}"
-}
-
-resource "aws_s3_bucket_acl" "log_storage_acl" {
-  bucket = aws_s3_bucket.log_storage.id
-  acl    = "log-delivery-write"
-}
-
-resource "aws_s3_bucket_logging" "file_storage" {
-  bucket = aws_s3_bucket.file_storage.id
-
-  target_bucket = aws_s3_bucket.log_storage.id
-  target_prefix = "${var.namespace}-logs/"
-}
-
-# Enables intelligent tiering storage class
-resource "aws_s3_bucket_intelligent_tiering_configuration" "configuration" {
-  bucket = aws_s3_bucket.log_storage.bucket
-  name   = "${var.namespace}-logs"
-
-  tiering {
-    access_tier = "DEEP_ARCHIVE_ACCESS"
-    days        = 180
-  }
-  tiering {
-    access_tier = "ARCHIVE_ACCESS"
-    days        = 125
-  }
 }
 
 # Give the bucket permission to send messages onto the queue. Looks like we

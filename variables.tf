@@ -237,7 +237,7 @@ variable "kubernetes_map_users" {
 ##########################################
 # External Bucket                        #
 ##########################################
-# Most users will not need these settings. They are ment for users who want a
+# Most users will not need these settings. They are meant for users who want a
 # bucket and sqs that are in a different account.
 
 variable "bucket_name" {
@@ -250,6 +250,18 @@ variable "bucket_kms_key_arn" {
   description = "The Amazon Resource Name of the KMS key with which S3 storage bucket objects will be encrypted."
   default     = ""
 }
+
+##########################################
+# Log Storage Bucket                        #
+##########################################
+# Most users will not need these settings. They are meant for users who want to setup
+# their own log storage bucket.
+
+variable "log_bucket_name" {
+  type    = string
+  default = ""
+}
+
 
 ##########################################
 # Redis                                  #

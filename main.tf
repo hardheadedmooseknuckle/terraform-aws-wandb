@@ -10,6 +10,7 @@ module "kms" {
 locals {
   kms_key_arn            = module.kms.key.arn
   provision_file_storage = var.bucket_name == ""
+  provision_log_storage  = var.log_bucket_name == ""
 }
 
 module "file_storage" {
@@ -39,6 +40,16 @@ data "aws_sqs_queue" "file_storage" {
   count      = var.use_internal_queue ? 0 : 1
   depends_on = [module.file_storage]
   name       = local.bucket_queue_name
+}
+
+module "log_storage" {
+  count     = local.provision_log_storage ? 1 : 0
+  source    = "./modules/log_storage"
+  namespace = var.namespace
+
+  file_storage = local.bucket_name
+
+  deletion_protection = var.deletion_protection
 }
 
 module "networking" {
