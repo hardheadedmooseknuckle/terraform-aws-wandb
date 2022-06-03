@@ -109,17 +109,20 @@ locals {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 17.23"
+  version = "~> 18.23"
 
   cluster_name    = var.namespace
   cluster_version = local.cluster_version
 
   vpc_id  = var.network_id
-  subnets = var.network_private_subnets
+  subnet_ids = var.network_private_subnets
 
-  map_accounts = var.map_accounts
-  map_roles    = var.map_roles
-  map_users    = var.map_users
+  create_aws_auth_configmap = true
+  manage_aws_auth_configmap = true
+
+  aws_auth_accounts = var.map_accounts
+  aws_auth_roles    = var.map_roles
+  aws_auth_users    = var.map_users
 
   cluster_endpoint_private_access      = true
   cluster_endpoint_public_access       = var.cluster_endpoint_public_access
@@ -132,12 +135,12 @@ module "eks" {
     }
   ] : null
 
-  node_groups = {
+  self_managed_node_groups = {
     primary = {
-      desired_capacity = 2,
-      max_capacity     = 5,
-      min_capacity     = 2,
-      instance_type    = ["m5.xlarge"],
+      desired_size = 2,
+      max_size     = 5,
+      min_size     = 2,
+      instance_type    = "m5.xlarge",
       iam_role_arn     = aws_iam_role.node.arn
     }
   }
@@ -180,3 +183,15 @@ resource "aws_security_group_rule" "elasticache" {
   to_port                  = local.redis_port
   type                     = "ingress"
 }
+
+resource "kubernetes_config_map" "aws_auth" {
+  metadata {
+    name      = "aws-auth"
+    namespace = var.namespace
+  }
+  data = {
+      mapAccounts = yamlencode(var.map_accounts)
+      mapRoles = yamlencode(var.map_roles)
+      mapUsers = yamlencode(var.map_users)
+    }
+  }
