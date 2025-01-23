@@ -4,49 +4,22 @@ variable "namespace" {
   description = "(Required) String used for prefix resources."
 }
 
-variable "acm_certificate_arn" {
-  type        = string
-  description = "(Optional) The ARN of an existing ACM certificate."
-  default     = null
-}
-
 variable "ssl_policy" {
   type        = string
   default     = "ELBSecurityPolicy-FS-1-2-Res-2020-10"
   description = "(Optional) SSL policy to use on ALB listener"
 }
 
-variable "zone_id" {
-  type        = string
-  description = "(Required) The zone ID of the route53 to create the application A record in."
-}
-
-variable "fqdn" {
-  type        = string
-  description = "(Required) Fully qualified domain name."
-}
-
-variable "load_balancing_scheme" {
-  default     = "PRIVATE"
-  description = "(Optional) Load Balancing Scheme. Supported values are: \"PRIVATE\"; \"PUBLIC\"."
-  type        = string
-
-  validation {
-    condition     = contains(["PRIVATE", "PUBLIC"], var.load_balancing_scheme)
-    error_message = "The load_balancer_scheme value must be one of: \"PRIVATE\"; \"PUBLIC\"."
-  }
-}
-
 variable "allowed_inbound_cidr" {
+  description = "CIDRs allowed to access wandb-server."
   type        = list(string)
-  default     = []
-  description = "(Optional) Allow HTTP(S) traffic to W&B. Defaults to no connections."
+  nullable    = false
 }
 
 variable "allowed_inbound_ipv6_cidr" {
+  description = "CIDRs allowed to access wandb-server."
   type        = list(string)
-  default     = []
-  description = "(Optional) Allow HTTP(S) traffic to W&B. Defaults to no connections."
+  nullable    = false
 }
 
 variable "network_id" {
@@ -54,18 +27,12 @@ variable "network_id" {
   type        = string
 }
 
-variable "network_private_subnets" {
-  description = "(Required) A list of the identities of the private subnetworks in which the MySQL Aurora instances will be deployed."
+variable "private_endpoint_cidr" {
+  description = "List of CIDR blocks allowed to access the wandb-server"
   type        = list(string)
 }
 
-variable "network_public_subnets" {
-  default     = []
-  description = "(Optional) A list of the identities of the public subnetworks in which resources will be deployed."
-  type        = list(string)
-}
-
-variable "target_port" {
-  type    = number
-  default = 32543
+variable "enable_private_only_traffic" {
+  description = "Boolean flag to create sg"
+  type        = bool
 }

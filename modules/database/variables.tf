@@ -3,6 +3,11 @@ variable "kms_key_arn" {
   type        = string
 }
 
+variable "performance_insights_kms_key_arn" {
+  description = "Specifies an existing KMS key ARN to encrypt the performance insights data if performance_insights_enabled is was enabled out of band"
+  type        = string
+}
+
 variable "namespace" {
   type        = string
   description = "The name prefix for all resources created."
@@ -16,7 +21,7 @@ variable "vpc_id" {
 variable "engine_version" {
   description = "Version for MySQL Auora to use"
   type        = string
-  default     = "8.0.mysql_aurora.3.03.0"
+  default     = "8.0.mysql_aurora.3.05.2"
 }
 
 variable "create_db_subnet_group" {
@@ -52,7 +57,7 @@ variable "deletion_protection" {
 variable "backup_retention_period" {
   description = "The days to retain backups for."
   type        = number
-  default     = 30
+  default     = 14
 }
 
 variable "preferred_backup_window" {
@@ -102,3 +107,16 @@ variable "master_username" {
   default     = "wandb"
 }
 
+# DB Instance Parameters
+variable "innodb_lru_scan_depth" {
+  description = "Specifies the innodb_lru_scan_depth value to set for the database"
+  type        = number
+  default     = 128
+}
+
+# Cluster parametes
+variable "binlog_row_image" {
+  description = "Value for binlog_row_image"
+  type        = string
+  default     = "minimal"
+}

@@ -1,142 +1,21 @@
+data "aws_caller_identity" "current" {}
+
 locals {
   mysql_port         = 3306
   redis_port         = 6379
   encrypt_ebs_volume = true
+  system_reserved = join(",", flatten([
+    var.system_reserved_cpu_millicores >= 0 ? ["cpu=${var.system_reserved_cpu_millicores}m"] : [],
+    var.system_reserved_memory_megabytes >= 0 ? ["memory=${var.system_reserved_memory_megabytes}Mi"] : [],
+    var.system_reserved_ephemeral_megabytes >= 0 ? ["ephemeral-storage=${var.system_reserved_ephemeral_megabytes}Mi"] : [],
+    var.system_reserved_pid >= 0 ? ["pid=${var.system_reserved_pid}"] : []
+  ]))
+  create_launch_template = (local.encrypt_ebs_volume || local.system_reserved != "")
 }
 
-data "aws_iam_policy_document" "node" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_eks_addon" "eks" {
-  cluster_name = var.namespace
-  addon_name   = "aws-ebs-csi-driver"
-  depends_on = [
-    module.eks
-  ]
-}
-
-locals {
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
-  ]
-}
-
-# Configure permissions required for nodes
-resource "aws_iam_role" "node" {
-  name               = "${var.namespace}-node"
-  assume_role_policy = data.aws_iam_policy_document.node.json
-
-  managed_policy_arns = concat(local.managed_policy_arns, var.eks_policy_arns)
-
-  # Policy to access S3
-  inline_policy {
-    name = "${var.namespace}-node-s3-policy"
-    policy = jsonencode({
-      "Version" : "2012-10-17",
-      "Statement" : [
-        {
-          "Effect" : "Allow",
-          "Action" : "s3:*",
-          "Resource" : [
-            "${var.bucket_arn}",
-            "${var.bucket_arn}/*"
-          ]
-        }
-      ]
-    })
-  }
-
-  # Policy to access SQS. If we are using an internal queue, we dont need to set
-  # any permissions
-  dynamic "inline_policy" {
-    for_each = var.bucket_sqs_queue_arn == null ? [] : [1]
-    content {
-      name = "${var.namespace}-node-sqs-policy"
-      policy = jsonencode({
-        "Version" : "2012-10-17",
-        "Statement" : [
-          {
-            "Effect" : "Allow",
-            "Action" : "sqs:*",
-            "Resource" : [
-              "${var.bucket_sqs_queue_arn}"
-            ]
-          }
-        ]
-      })
-    }
-  }
-
-  # Encrypt and decrypt with KMS
-  dynamic "inline_policy" {
-    for_each = var.bucket_kms_key_arn == "" ? [] : [1]
-    content {
-      name = "${var.namespace}-node-kms-policy"
-      policy = jsonencode({
-        "Version" : "2012-10-17",
-        "Statement" : [
-          {
-            "Effect" : "Allow",
-            "Action" : [
-              "kms:Encrypt",
-              "kms:Decrypt",
-              "kms:ReEncrypt*",
-              "kms:GenerateDataKey*",
-              "kms:DescribeKey"
-            ],
-            "Resource" : [
-              "${var.bucket_kms_key_arn}"
-            ]
-          }
-        ]
-      })
-    }
-  }
-
-  # Publish cloudwatch metrics
-  inline_policy {
-    name = "${var.namespace}-node-cloudwatch-policy"
-    policy = jsonencode({
-      "Version" : "2012-10-17",
-      "Statement" : [
-        {
-          "Effect" : "Allow",
-          "Action" : ["cloudwatch:PutMetricData"],
-          "Resource" : "*"
-        }
-      ]
-    })
-  }
-
-  # Enable IMDsv2 
-  inline_policy {
-    name = "${var.namespace}-node-IMDsv2-policy"
-    policy = jsonencode({
-      Version = "2012-10-17"
-      Statement = [
-        {
-          Effect   = "Allow"
-          Action   = "ec2:DescribeInstanceAttribute"
-          Resource = "*"
-        },
-        {
-          Effect   = "Allow"
-          Action   = "ec2:PutInstanceMetadata"
-          Resource = "*"
-        }
-      ]
-    })
-  }
+data "aws_subnet" "private" {
+  count = length(var.network_private_subnets)
+  id    = var.network_private_subnets[count.index]
 }
 
 module "eks" {
@@ -153,9 +32,11 @@ module "eks" {
   map_roles    = var.map_roles
   map_users    = var.map_users
 
+  cluster_enabled_log_types            = ["api", "audit", "controllerManager", "scheduler"]
   cluster_endpoint_private_access      = true
   cluster_endpoint_public_access       = var.cluster_endpoint_public_access
   cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
+  cluster_log_retention_in_days        = 30
 
   cluster_encryption_config = var.kms_key_arn != "" ? [
     {
@@ -164,23 +45,30 @@ module "eks" {
     }
   ] : null
 
+  # node_security_group_enable_recommended_rules = false
   worker_additional_security_group_ids = [aws_security_group.primary_workers.id]
+  node_groups_defaults = {
+    create_launch_template               = local.create_launch_template,
+    disk_encrypted                       = local.encrypt_ebs_volume,
+    disk_kms_key_id                      = var.kms_key_arn,
+    disk_type                            = "gp3"
+    enable_monitoring                    = true
+    force_update_version                 = local.encrypt_ebs_volume,
+    iam_role_arn                         = aws_iam_role.node.arn,
+    instance_types                       = var.instance_types,
+    kubelet_extra_args                   = local.system_reserved != "" ? "--system-reserved=${local.system_reserved}" : "",
+    metadata_http_put_response_hop_limit = 2
+    metadata_http_tokens                 = "required",
+    version                              = var.cluster_version,
+  }
 
   node_groups = {
-    primary = {
-      version                = var.cluster_version,
-      desired_capacity       = 2,
-      max_capacity           = 5,
-      min_capacity           = 2,
-      instance_types         = var.instance_types,
-      iam_role_arn           = aws_iam_role.node.arn,
-      create_launch_template = local.encrypt_ebs_volume,
-      disk_encrypted         = local.encrypt_ebs_volume,
-      disk_kms_key_id        = var.kms_key_arn,
-      force_update_version   = local.encrypt_ebs_volume,
-      # IMDsv2
-      metadata_http_tokens                 = "required",
-      metadata_http_put_response_hop_limit = 2
+    for idx, subnet in data.aws_subnet.private : "ng-${idx}" => {
+      subnets          = [subnet.id]
+      name_prefix      = "${var.namespace}-${regex(".*[[:digit:]]([[:alpha:]])", subnet.availability_zone)[0]}"
+      desired_capacity = var.min_nodes
+      max_capacity     = var.max_nodes
+      min_capacity     = var.min_nodes
     }
   }
 
@@ -190,6 +78,38 @@ module "eks" {
     TerraformNamespace = var.namespace
     TerraformModule    = "terraform-aws-wandb/module/app_eks"
   }
+}
+
+resource "kubernetes_annotations" "gp2" {
+  api_version = "storage.k8s.io/v1"
+  kind        = "StorageClass"
+  force       = "true"
+  depends_on  = [module.eks]
+
+  metadata {
+    name = "gp2"
+  }
+  annotations = {
+    "storageclass.kubernetes.io/is-default-class" = "false"
+  }
+}
+
+resource "kubernetes_storage_class" "gp3" {
+  metadata {
+    name = "gp3"
+    annotations = {
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
+  depends_on          = [kubernetes_annotations.gp2]
+  storage_provisioner = "kubernetes.io/aws-ebs"
+  parameters = {
+    fsType = "ext4"
+    type   = "gp3"
+  }
+  reclaim_policy         = "Delete"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  allow_volume_expansion = true
 }
 
 resource "aws_security_group" "primary_workers" {
@@ -227,4 +147,43 @@ resource "aws_security_group_rule" "elasticache" {
   from_port                = local.redis_port
   to_port                  = local.redis_port
   type                     = "ingress"
+}
+
+data "tls_certificate" "eks" {
+  url = module.eks.cluster_oidc_issuer_url
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
+  url             = module.eks.cluster_oidc_issuer_url
+}
+
+module "lb_controller" {
+  source = "./lb_controller"
+
+  namespace                        = var.namespace
+  oidc_provider                    = aws_iam_openid_connect_provider.eks
+  aws_loadbalancer_controller_tags = var.aws_loadbalancer_controller_tags
+
+  depends_on = [module.eks]
+}
+
+module "external_dns" {
+  source = "./external_dns"
+
+  namespace     = var.namespace
+  oidc_provider = aws_iam_openid_connect_provider.eks
+  fqdn          = var.fqdn
+
+  depends_on = [module.eks]
+}
+
+module "cluster_autoscaler" {
+  source = "./cluster_autoscaler"
+
+  namespace     = var.namespace
+  oidc_provider = aws_iam_openid_connect_provider.eks
+
+  depends_on = [module.eks]
 }

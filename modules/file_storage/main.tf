@@ -8,30 +8,11 @@ resource "aws_sqs_queue" "file_storage" {
 
   # Enable long-polling
   receive_wait_time_seconds = 10
-
   # kms_master_key_id = var.kms_key_arn
 }
 
 resource "aws_s3_bucket" "file_storage" {
   bucket = "${var.namespace}-file-storage-${random_pet.file_storage.id}"
-  acl    = "private"
-
-  cors_rule {
-    allowed_headers = ["*"]
-    allowed_methods = ["GET", "HEAD", "PUT"]
-    allowed_origins = ["*"]
-    expose_headers  = ["ETag"]
-    max_age_seconds = 3000
-  }
-
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        kms_master_key_id = var.kms_key_arn
-        sse_algorithm     = var.sse_algorithm
-      }
-    }
-  }
 
   force_destroy = !var.deletion_protection
 
@@ -40,12 +21,76 @@ resource "aws_s3_bucket" "file_storage" {
   depends_on = [aws_sqs_queue.file_storage]
 }
 
+# Apply an HTTPS-only bucket policy to each bucket
+resource "aws_s3_bucket_policy" "https_only" {
+  count  = var.enable_s3_https_only ? 1 : 0
+  bucket = aws_s3_bucket.file_storage.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid       = "DenyHTTPRequests",
+        Effect    = "Deny",
+        Principal = "*",
+        Action    = "s3:*",
+        Resource = [
+          "arn:aws:s3:::${aws_s3_bucket.file_storage.bucket}",
+          "arn:aws:s3:::${aws_s3_bucket.file_storage.bucket}/*"
+        ],
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_s3_bucket_acl" "file_storage" {
+  depends_on = [aws_s3_bucket_ownership_controls.file_storage]
+
+  bucket = aws_s3_bucket.file_storage.id
+  acl    = "private"
+}
+
+resource "aws_s3_bucket_cors_configuration" "file_storage" {
+  bucket = aws_s3_bucket.file_storage.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "HEAD", "PUT"]
+    allowed_origins = ["*"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "file_storage" {
+  bucket = aws_s3_bucket.file_storage.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "file_storage" {
   bucket                  = aws_s3_bucket.file_storage.id
   block_public_acls       = true
   block_public_policy     = true
   restrict_public_buckets = true
   ignore_public_acls      = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "file_storage" {
+  bucket = aws_s3_bucket.file_storage.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = var.kms_key_arn
+      sse_algorithm     = var.sse_algorithm
+    }
+  }
 }
 
 # Give the bucket permission to send messages onto the queue. Looks like we
